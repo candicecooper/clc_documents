@@ -93,16 +93,6 @@ supabase: Client | None = init_supabase()
 
 BUCKET = "clc-documents"
 
-# ── LEADERSHIP FOLDERS ─────────────────────────────────────────────────────────
-# Add new folders here as needed — each gets its own upload area and doc list
-LEADERSHIP_FOLDERS = {
-    "leadership_site_planning": {
-        "label": "Site Planning",
-        "icon":  "🗂️",
-        "desc":  "Site plans, strategic documents and planning resources",
-    },
-}
-
 # ── POLICY SECTIONS ────────────────────────────────────────────────────────────
 SECTIONS = {
     "policy_dfe": {
@@ -383,143 +373,21 @@ def render_section(section_key: str):
                             st.rerun()
 
 
-# ── LEADERSHIP FOLDER RENDERER ─────────────────────────────────────────────────
-def render_leadership():
-    """Leadership tab — shows each folder as an expander with its own upload area."""
-    st.markdown("""
-    <div class="section-banner">
-      <h2>👔 Leadership</h2>
-      <p>Leadership documents organised by folder. Admins can upload to any folder.</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    render_admin_inline("leadership")
-    st.markdown("")
-
-    for folder_key, folder_cfg in LEADERSHIP_FOLDERS.items():
-        docs = load_docs(folder_key)
-        with st.expander(
-            f"{folder_cfg['icon']} {folder_cfg['label']} — {len(docs)} document{'s' if len(docs) != 1 else ''}",
-            expanded=True
-        ):
-            st.caption(folder_cfg["desc"])
-
-            # ── UPLOAD ────────────────────────────────────────────────────────
-            if check_admin():
-                st.markdown("---")
-                st.markdown("**➕ Upload to this folder**")
-                doc_title = st.text_input(
-                    "Document Title *",
-                    placeholder="e.g. 2026 Site Plan Draft",
-                    key=f"title_{folder_key}"
-                )
-                uploaded_file = st.file_uploader(
-                    "Choose file",
-                    type=["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "png", "jpg", "jpeg", "txt"],
-                    key=f"upload_{folder_key}",
-                    help="Accepted: PDF, Word, Excel, PowerPoint, images, text"
-                )
-                uploader_name = st.text_input(
-                    "Your name",
-                    placeholder="e.g. Candice Cooper",
-                    key=f"uploader_{folder_key}"
-                )
-                if st.button("📤 Upload Document", key=f"upload_btn_{folder_key}", type="primary"):
-                    if not doc_title:
-                        st.warning("Please enter a document title.")
-                    elif not uploaded_file:
-                        st.warning("Please select a file.")
-                    else:
-                        safe_name    = uploaded_file.name.replace(" ", "_")
-                        storage_path = f"{folder_key}/{uuid.uuid4().hex[:8]}_{safe_name}"
-                        file_bytes   = uploaded_file.read()
-                        upload_ok    = True
-                        if supabase:
-                            try:
-                                supabase.storage.from_(BUCKET).upload(
-                                    storage_path, file_bytes,
-                                    {"content-type": uploaded_file.type or "application/octet-stream"}
-                                )
-                            except Exception as e:
-                                st.error(f"Storage upload failed: {e}")
-                                upload_ok = False
-                        if upload_ok:
-                            saved = save_doc_record(
-                                folder_key, doc_title, uploaded_file.name,
-                                storage_path, uploader_name or "Admin", len(file_bytes)
-                            )
-                            if saved:
-                                st.success(f"✅ '{doc_title}' uploaded!")
-                                st.rerun()
-                st.markdown("---")
-
-            # ── DOCUMENT LIST ──────────────────────────────────────────────────
-            if not docs:
-                st.info("No documents in this folder yet." + (" Upload one above." if check_admin() else ""))
-            else:
-                for doc in docs:
-                    ext  = doc.get("filename", "").rsplit(".", 1)[-1].lower()
-                    icon = {"pdf":"📕","docx":"📝","doc":"📝","xlsx":"📊","xls":"📊",
-                            "pptx":"📊","ppt":"📊","png":"🖼️","jpg":"🖼️","jpeg":"🖼️","txt":"📄"}.get(ext, "📄")
-                    try:
-                        ts = datetime.fromisoformat(doc["uploaded_at"]).strftime("%d %b %Y")
-                    except Exception:
-                        ts = doc.get("uploaded_at", "")[:10]
-                    by_str   = f"Uploaded by {doc['uploaded_by']} · " if doc.get("uploaded_by") else ""
-                    size_str = f"{doc.get('file_size_kb','?')} KB" if doc.get("file_size_kb") else ""
-
-                    col_info, col_btn = st.columns([5, 2])
-                    with col_info:
-                        st.markdown(f"""
-                        <div class="doc-card">
-                          <div class="doc-icon">{icon}</div>
-                          <div class="doc-info">
-                            <div class="doc-title">{doc['title']}</div>
-                            <div class="doc-meta">{by_str}{ts}{' · ' + size_str if size_str else ''}</div>
-                          </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_btn:
-                        st.write("")
-                        url = get_download_url(doc.get("storage_path", ""))
-                        if url:
-                            st.link_button("⬇ Download", url, use_container_width=True)
-                        else:
-                            st.caption("No download link")
-                        if check_admin():
-                            if st.button("🗑️ Delete", key=f"del_{doc['id']}", use_container_width=True):
-                                st.session_state[f"confirm_del_{doc['id']}"] = True
-                                st.rerun()
-                            if st.session_state.get(f"confirm_del_{doc['id']}"):
-                                st.warning(f"Delete '{doc['title']}'?")
-                                cy, cn = st.columns(2)
-                                with cy:
-                                    if st.button("Yes", key=f"yes_del_{doc['id']}", type="primary"):
-                                        if delete_doc(doc):
-                                            st.session_state[f"confirm_del_{doc['id']}"] = False
-                                            st.success("Deleted")
-                                            st.rerun()
-                                with cn:
-                                    if st.button("No", key=f"no_del_{doc['id']}"):
-                                        st.session_state[f"confirm_del_{doc['id']}"] = False
-                                        st.rerun()
-
-
 # ── MAIN ───────────────────────────────────────────────────────────────────────
 def main():
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);
                 color:white;border-radius:12px;padding:1.25rem 1.5rem;
                 margin-bottom:1.5rem;">
-      <h1 style="margin:0;font-size:1.4rem;font-weight:700;">📄 CLC Document Library</h1>
+      <h1 style="margin:0;font-size:1.4rem;font-weight:700;">📄 CLC Policies</h1>
       <p style="margin:0.3rem 0 0;opacity:0.7;font-size:0.85rem;">
-        Leadership resources &amp; school policies
+        DfE, LBU &amp; CLC policies and procedures
       </p>
     </div>
     """, unsafe_allow_html=True)
 
     with st.sidebar:
-        st.markdown("### 📄 CLC Document Library")
+        st.markdown("### 📄 CLC Policies")
         st.caption("Cowandilla Learning Centre")
         st.markdown("---")
         if check_admin():
@@ -530,28 +398,16 @@ def main():
         else:
             st.info("Log in as admin on any tab to upload documents.")
 
-    # Deep-link: ?section=leadership / policy_dfe / policy_lbu / policy_clc
+    # Deep-link: ?section=policy_dfe / policy_lbu / policy_clc
     params = st.query_params
-    default_section = params.get("section", "leadership")
-
+    default_section = params.get("section", "policy_dfe")
     policy_keys = ["policy_dfe", "policy_lbu", "policy_clc"]
-    tab_labels  = ["👔 Leadership", "📘 DfE Policies", "📗 LBU Policies", "📙 CLC Policies"]
+    default_idx = policy_keys.index(default_section) if default_section in policy_keys else 0
 
-    # Select starting tab from query param
-    if default_section == "leadership":
-        default_idx = 0
-    elif default_section in policy_keys:
-        default_idx = policy_keys.index(default_section) + 1
-    else:
-        default_idx = 0
-
-    tabs = st.tabs(tab_labels)
-
-    with tabs[0]:
-        render_leadership()
+    tabs = st.tabs(["📘 DfE Policies", "📗 LBU Policies", "📙 CLC Policies"])
 
     for i, key in enumerate(policy_keys):
-        with tabs[i + 1]:
+        with tabs[i]:
             render_section(key)
 
 
