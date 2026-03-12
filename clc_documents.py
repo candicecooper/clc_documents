@@ -220,6 +220,32 @@ def render_admin_login():
 
 
 # ── SECTION RENDERER ───────────────────────────────────────────────────────────
+def render_admin_inline():
+    """Compact inline admin login/logout bar shown at top of each section."""
+    if check_admin():
+        col1, col2 = st.columns([5, 1])
+        with col1:
+            st.success("🔐 Admin mode — upload panel is open below")
+        with col2:
+            if st.button("Logout", key="admin_logout_inline"):
+                st.session_state.is_admin = False
+                st.rerun()
+    else:
+        with st.expander("🔐 Admin Login — click here to upload documents", expanded=False):
+            pwd = st.text_input("Admin password", type="password", key="admin_pwd_inline")
+            if st.button("Login", key="admin_login_inline", type="primary"):
+                try:
+                    admin_pass = st.secrets.get("admin_password", "CLC2026admin")
+                except Exception:
+                    admin_pass = "CLC2026admin"
+                if pwd == admin_pass:
+                    st.session_state.is_admin = True
+                    st.success("✅ Logged in")
+                    st.rerun()
+                else:
+                    st.error("Incorrect password")
+
+
 def render_section(section_key: str):
     cfg = SECTIONS[section_key]
 
@@ -230,11 +256,15 @@ def render_section(section_key: str):
     </div>
     """, unsafe_allow_html=True)
 
+    # Inline admin login/logout
+    render_admin_inline()
+    st.markdown("")
+
     docs = load_docs(section_key)
 
     # ── UPLOAD (admin only) ────────────────────────────────────────────────────
     if check_admin():
-        with st.expander("➕ Upload New Document", expanded=False):
+        with st.expander("➕ Upload New Document", expanded=True):
             with st.container():
                 doc_title = st.text_input(
                     "Document Title *",
@@ -364,18 +394,18 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Admin login in sidebar
+    # Sidebar — info only
     with st.sidebar:
-        st.markdown("### ⚙️ Admin")
+        st.markdown("### 📄 CLC Document Library")
+        st.caption("Cowandilla Learning Centre")
+        st.markdown("---")
         if check_admin():
-            st.success("✅ Admin mode")
-            if st.button("Logout Admin"):
+            st.success("✅ Admin mode active")
+            if st.button("Logout Admin", key="sidebar_logout"):
                 st.session_state.is_admin = False
                 st.rerun()
         else:
-            render_admin_login()
-        st.markdown("---")
-        st.caption("CLC Document Library · Cowandilla Learning Centre")
+            st.info("Log in as admin on any tab to upload documents.")
 
     # Deep-link via query param: ?section=leadership / policy_dfe / policy_lbu / policy_clc
     params = st.query_params
